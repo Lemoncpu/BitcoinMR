@@ -1,0 +1,1506 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>比特币信任网络 · 多任务分析</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f3f6fb;
+        color: #17243b;
+        font-family: system-ui;
+      }
+      main {
+        max-width: 1440px;
+        margin: auto;
+        padding: 28px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      h1 {
+        font-size: 26px;
+      }
+      select {
+        padding: 10px;
+        border: 1px solid #ccd5e3;
+        border-radius: 8px;
+      }
+      #status {
+        margin: 12px 0 24px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 10px #17243b08;
+      }
+      .wide {
+        grid-column: 1/-1;
+      }
+      .card h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .card p {
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.7;
+      }
+      .chart {
+        height: 390px;
+      }
+      #rankChart {
+        height: 490px;
+      }
+      .stats {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      .stat {
+        background: white;
+        padding: 14px 20px;
+        border-radius: 10px;
+      }
+      .stat b {
+        display: block;
+        font-size: 24px;
+        margin-top: 6px;
+      }
+      .table-scroll {
+        overflow: auto;
+        max-height: 580px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      td,
+      th {
+        text-align: left;
+        padding: 12px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      @media (max-width: 850px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        header {
+          display: block;
+        }
+        main {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>比特币信任网络 · 多任务分析</h1>
+          <p>比较用户信誉、评分活动、持续参与情况和评价关系中的分歧。</p>
+        </div>
+        <label
+          >分析 Job
+          <select id="jobSelector">
+            <option value="mr7">MR7 · 三种信誉算法比较</option>
+            <option value="mr22">MR22 · OTC星期与小时活动热力（基础）</option>
+            <option value="mr26">MR26 · 双向评分强度不对称（进阶）</option>
+            <option value="mr18">MR18 · 用户每日评分突增检测（进阶）</option>
+            <option value="mr27">
+              MR27 · 正向信任链与直接负评冲突（进阶）
+            </option>
+            <option value="mr25">MR25 · 主动评分用户持续参与（进阶）</option>
+          </select></label
+        ><label
+          >数据平台
+          <select id="platform">
+            <option value="alpha">Bitcoin Alpha</option>
+            <option value="otc">Bitcoin OTC</option>
+          </select></label
+        >
+      </header>
+      <section class="card" style="margin: 18px 0">
+        <label
+          >柱状图数值轴
+          <select id="axisScale">
+            <option value="auto">自动（长尾数据对数压缩）</option>
+            <option value="linear">线性（从零展示完整比例）</option>
+            <option value="log">对数压缩（放大小值差异）</option>
+          </select></label
+        >
+        <p>
+          上限按实际数据动态留白，不截断最大值。对数压缩采用
+          log₁₀(1+x)，保留零值；标签和悬停显示原始数值。散点图可用滚轮及两轴滑块缩放，恢复按钮返回全量。
+        </p>
+      </section>
+      <div id="status" role="status"></div>
+      <div id="stats" class="stats"></div>
+      <div class="grid" id="mr7Panel">
+        <section class="card wide">
+          <h2>MR7 · 三种信誉算法比较</h2>
+          <p>
+            比较同一用户在直接均分、正向Katz和带符号Katz下的得分与排名，查看负面评价对传播结果的影响。
+          </p>
+        </section>
+        <section class="card wide">
+          <h2>① 同用户三方法排名</h2>
+          <p>
+            选取 Signed Katz 前 10 名，使用对数排名轴保留三种方法的完整差距；1
+            为最佳。悬停查看精确名次。
+          </p>
+          <div id="rankChart" class="chart"></div>
+        </section>
+        <section class="card">
+          <h2>② Katz 头部用户排名细节</h2>
+          <p>
+            同一批用户，仅比较两种
+            Katz，使用线性坐标，不受直接均分排名范围影响。
+          </p>
+          <div id="katzChart" class="chart"></div>
+        </section>
+        <section class="card">
+          <h2>③ 两种 Katz 的最大排名变化</h2>
+          <p>
+            从全部合格用户中选取绝对变化最大的 15
+            位；差异同时受到负边传播和归一化口径影响。变化 = Positive 排名 −
+            Signed 排名；正数表示 Signed 排名上升。
+          </p>
+          <div id="deltaChart" class="chart"></div>
+        </section>
+        <section class="card">
+          <h2>④ 两种 Katz 的得分关系</h2>
+          <p>查看全部合格用户在两种Katz下的得分关系，虚线为y=x。</p>
+          <div id="scatterChart" class="chart"></div>
+        </section>
+        <section class="card">
+          <h2>⑤ 迭代收敛过程</h2>
+          <p>
+            纵轴为 L1 变化量（对数轴），虚线为终止阈值
+            0.01。越早到达阈值，迭代轮数越少。
+          </p>
+          <div id="convergenceChart" class="chart"></div>
+        </section>
+        <section class="card wide">
+          <h2>⑥ 全体排名一致性与 Top-10 重合</h2>
+          <p>
+            仅比较入度 ≥ 5 的同一批用户。Spearman 使用并列平均秩；Top-10
+            按名次、用户 ID 决胜，固定取 10 人。
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>方法组合</th>
+                <th>Spearman 相关系数</th>
+                <th>Top-10 重合</th>
+              </tr>
+            </thead>
+            <tbody id="metrics"></tbody>
+          </table>
+        </section>
+        <section class="card wide">
+          <h2>⑦ 各方法同名次的用户与原始得分</h2>
+          <p>
+            按三种方法各自的排名展示前 10
+            个名次，查看各方法头部用户的得分差异；并列者全部列出。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>名次</th>
+                  <th>Direct Average：用户 / 分数</th>
+                  <th>Positive Katz：用户 / 分数</th>
+                  <th>Signed Katz：用户 / 分数</th>
+                </tr>
+              </thead>
+              <tbody id="sameRankScores"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card wide">
+          <h2>⑧ 同用户三方法原始名次 · 分组柱状图</h2>
+          <p>
+            选取 Signed Katz 前 10
+            名，每位用户并列三根柱，直接比较原始名次，越小越好。自动模式对数压缩，悬停显示原始分数和名次。
+          </p>
+          <div id="groupedBarChart" class="chart" style="height: 490px"></div>
+        </section>
+      </div>
+      <div id="analyticsPanel" style="display: none">
+        <section class="card" style="margin-bottom: 20px">
+          <h2 id="jobTitle"></h2>
+          <p id="jobBusiness"></p>
+        </section>
+        <div class="grid">
+          <section class="card">
+            <h2 id="primaryTitle"></h2>
+            <div class="chart" id="analyticsPrimary"></div>
+          </section>
+          <section class="card">
+            <h2 id="secondaryTitle"></h2>
+            <div class="chart" id="analyticsSecondary"></div>
+          </section>
+          <section class="card wide">
+            <h2 id="dataTitle">真实计算明细</h2>
+            <p>
+              表格最多展示前 10
+              行，图表使用对应完整数据；当前批次与输入路径可追溯到 HDFS 的
+              _job_manifest.json。
+            </p>
+            <div class="table-scroll">
+              <table>
+                <thead id="analyticsHeader"></thead>
+                <tbody id="analyticsRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+    <script src="vendor/echarts.min.js"></script>
+    <script>
+      const methods = [
+        { directory: "direct_average", label: "Direct Average" },
+        { directory: "positive_katz", label: "Positive Katz" },
+        { directory: "signed_katz", label: "Signed Katz" },
+      ];
+      const colors = ["#64748b", "#2563eb", "#e77925"];
+      const charts = Object.fromEntries(
+        [
+          "rankChart",
+          "katzChart",
+          "deltaChart",
+          "scatterChart",
+          "convergenceChart",
+          "groupedBarChart",
+        ].map((id) => [id, echarts.init(document.getElementById(id))]),
+      );
+      // 只接受最后一次选择所对应的异步响应，防止平台/任务快速切换时发生竞态。
+      let requestVersion = 0;
+      /**
+       * 用于 Spearman 相关系数的平均秩：同分用户取所占位置的平均值。
+       * 这里的统计平均秩不同于 Hadoop 结果中的 1、1、3 竞赛名次，不会修改后端排名。
+       */
+      function averageRanks(users, results) {
+        const ordered = [...users].sort(
+          (left, right) => results.get(left).score - results.get(right).score,
+        );
+        const ranks = new Map();
+        let start = 0;
+        while (start < ordered.length) {
+          let end = start + 1;
+          while (
+            end < ordered.length &&
+            results.get(ordered[end]).score ===
+              results.get(ordered[start]).score
+          )
+            end++;
+          for (let index = start; index < end; index++)
+            ranks.set(ordered[index], (start + 1 + end) / 2);
+          start = end;
+        }
+        return users.map((userId) => ranks.get(userId));
+      }
+      /**
+       * 对两个等长排名数组计算 Pearson 相关，即 Spearman 的最后一步。
+       * 任意一侧没有变化时返回 null，页面显示缺失含义，不把它伪装成零相关。
+       */
+      function correlation(left, right) {
+        const mean = (values) =>
+          values.reduce((sum, value) => sum + value, 0) / values.length;
+        const leftMean = mean(left),
+          rightMean = mean(right);
+        let covariance = 0,
+          leftVariance = 0,
+          rightVariance = 0;
+        for (let index = 0; index < left.length; index++) {
+          const leftDifference = left[index] - leftMean,
+            rightDifference = right[index] - rightMean;
+          covariance += leftDifference * rightDifference;
+          leftVariance += leftDifference ** 2;
+          rightVariance += rightDifference ** 2;
+        }
+        return leftVariance && rightVariance
+          ? covariance / Math.sqrt(leftVariance * rightVariance)
+          : null;
+      }
+      const readableNumber = (value) =>
+        new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3 }).format(
+          value,
+        );
+      /**
+       * 统一处理柱状图的数值范围和显示尺度。
+       * 自动模式根据真实值跨度决定是否使用 log10(1+x)，并在顶部保留空间。
+       * rawValue 始终保存原值，标签和提示框展示原值；零值仍然为零。
+       */
+      function scaledBars(option, forceLog = false) {
+        const mode = document.getElementById("axisScale").value;
+        const raw = option.series.flatMap((series) =>
+          series.data.map((item) =>
+            Number(typeof item === "object" ? item.value : item),
+          ),
+        );
+        const positive = raw.filter((value) => value > 0),
+          largest = Math.max(0, ...raw),
+          smallest = positive.length ? Math.min(...positive) : 1;
+        const logarithmic =
+          mode === "log" ||
+          (mode === "auto" && (forceLog || largest / smallest > 30));
+        const axisName = option.yAxis.name || "数值";
+        option.yAxis = {
+          ...option.yAxis,
+          type: "value",
+          inverse: false,
+          min: 0,
+          max: logarithmic
+            ? Math.max(0.4, Math.log10(1 + largest) * 1.14)
+            : Math.max(1, largest * 1.14),
+          name: axisName + (logarithmic ? "（对数压缩）" : ""),
+          axisLabel: {
+            formatter: (value) =>
+              readableNumber(
+                logarithmic ? Math.max(0, 10 ** value - 1) : value,
+              ),
+          },
+        };
+        option.series = option.series.map((series) => ({
+          ...series,
+          label: {
+            show: true,
+            position: "top",
+            fontSize: 11,
+            formatter: (parameters) => readableNumber(parameters.data.rawValue),
+          },
+          data: series.data.map((item) => {
+            const original = typeof item === "object" ? item : { value: item };
+            const rawValue = Number(original.value);
+            return {
+              ...original,
+              rawValue,
+              value: logarithmic ? Math.log10(1 + rawValue) : rawValue,
+            };
+          }),
+        }));
+        if (!option.tooltip?.formatter)
+          option.tooltip = {
+            ...option.tooltip,
+            trigger: "axis",
+            axisPointer: { type: "shadow" },
+            formatter: (parameters) =>
+              `${parameters[0]?.axisValueLabel || ""}<br>` +
+              parameters
+                .map(
+                  (parameter) =>
+                    `${parameter.marker}${parameter.seriesName || axisName}：${readableNumber(parameter.data.rawValue)}`,
+                )
+                .join("<br>"),
+          };
+        option.toolbox = { feature: { restore: {}, saveAsImage: {} } };
+        return option;
+      }
+      /**
+       * 为散点图添加横纵轴缩放、滑块与范围留白。
+       * 不裁掉异常值，不改写原始分数，让密集区域可以放大观察。
+       */
+      function scatterZoom(option) {
+        option.grid = {
+          ...option.grid,
+          left: 85,
+          right: 65,
+          bottom: 90,
+          top: 40,
+        };
+        option.xAxis = {
+          ...option.xAxis,
+          scale: true,
+          boundaryGap: ["8%", "8%"],
+        };
+        option.yAxis = {
+          ...option.yAxis,
+          scale: true,
+          boundaryGap: ["8%", "8%"],
+        };
+        option.dataZoom = [
+          { type: "inside", xAxisIndex: 0, filterMode: "none" },
+          { type: "inside", yAxisIndex: 0, filterMode: "none" },
+          { type: "slider", xAxisIndex: 0, bottom: 15, filterMode: "none" },
+          { type: "slider", yAxisIndex: 0, right: 5, filterMode: "none" },
+        ];
+        option.toolbox = {
+          feature: { dataZoom: {}, restore: {}, saveAsImage: {} },
+        };
+        return option;
+      }
+      const base = {
+        color: colors,
+        tooltip: { trigger: "axis" },
+        legend: { top: 0 },
+        grid: { top: 48, left: 72, right: 30, bottom: 64 },
+      };
+      /**
+       * 请求 HBase 当前批次，绘制三种信誉方法的分数、排名、收敛历史和对比表。
+       * 每次请求递增版本号，用户快速切换平台时丢弃旧响应，避免旧图覆盖新选择。
+       */
+      async function renderMr7() {
+        const version = ++requestVersion;
+        const platform = document.getElementById("platform").value;
+        const status = document.getElementById("status");
+        status.textContent = "正在查询 Linux HBase…";
+        Object.values(charts).forEach((chart) => chart.showLoading());
+        try {
+          const response = await fetch(
+            `/api/dashboard?platform=${encodeURIComponent(platform)}`,
+            { cache: "no-store" },
+          );
+          if (!response.ok)
+            throw new Error(
+              `HBase API ${response.status}，请先导入 HDFS 结果并运行 HbaseEchartsServer.java`,
+            );
+          const payload = await response.json();
+          if (payload.source !== "hbase-api")
+            throw new Error("当前地址是旧版服务，请打开 HBase 8002 页面");
+          if (version !== requestVersion) return;
+          const resultRows = methods.map(
+            (method) => payload.results[method.directory],
+          );
+          const iterationRows = methods
+            .slice(1)
+            .map((method) => payload.iterations[method.directory]);
+          const results = resultRows.map(
+            (rows) =>
+              new Map(
+                rows.map((row) => [
+                  row.user_id,
+                  {
+                    userId: row.user_id,
+                    score: row.score === null ? null : Number(row.score),
+                    rank: row.rank === null ? null : Number(row.rank),
+                  },
+                ]),
+              ),
+          );
+          const users = [...results[0].keys()].filter((userId) =>
+            results.every(
+              (result) =>
+                result.get(userId)?.rank !== null &&
+                result.get(userId)?.rank !== undefined,
+            ),
+          );
+          const orderedUsers = (result) =>
+            [...users].sort(
+              (left, right) =>
+                result.get(left).rank - result.get(right).rank ||
+                Number(left) - Number(right),
+            );
+          const topUsers = orderedUsers(results[2]).slice(0, 10);
+          charts.rankChart.setOption(
+            {
+              ...base,
+              xAxis: {
+                type: "category",
+                name: "用户 ID",
+                data: topUsers,
+                axisLabel: { rotate: 35 },
+              },
+              yAxis: {
+                type: "log",
+                logBase: 10,
+                inverse: true,
+                min: 1,
+                name: "排名（对数轴；1 最佳）",
+              },
+              series: methods.map((method, index) => ({
+                name: method.label,
+                type: "line",
+                symbolSize: 7,
+                data: topUsers.map((userId) => results[index].get(userId).rank),
+              })),
+            },
+            true,
+          );
+          charts.katzChart.setOption(
+            {
+              ...base,
+              color: colors.slice(1),
+              xAxis: {
+                type: "category",
+                data: topUsers,
+                axisLabel: { rotate: 45 },
+              },
+              yAxis: {
+                type: "value",
+                inverse: true,
+                min: 1,
+                name: "排名（1 最佳）",
+                minInterval: 1,
+              },
+              series: methods.slice(1).map((method, index) => ({
+                name: method.label,
+                type: "line",
+                symbol: index ? "diamond" : "circle",
+                symbolSize: 8,
+                data: topUsers.map(
+                  (userId) => results[index + 1].get(userId).rank,
+                ),
+              })),
+            },
+            true,
+          );
+          const changes = users
+            .map((userId) => ({
+              userId,
+              delta: results[1].get(userId).rank - results[2].get(userId).rank,
+            }))
+            .sort(
+              (left, right) =>
+                Math.abs(right.delta) - Math.abs(left.delta) ||
+                Number(left.userId) - Number(right.userId),
+            )
+            .slice(0, 15);
+          charts.deltaChart.setOption(
+            {
+              ...base,
+              legend: { show: false },
+              grid: { top: 28, left: 75, right: 45, bottom: 45 },
+              xAxis: { type: "value", name: "排名变化" },
+              yAxis: {
+                type: "category",
+                inverse: true,
+                data: changes.map((row) => row.userId),
+                name: "用户 ID",
+              },
+              series: [
+                {
+                  type: "bar",
+                  data: changes.map((row) => ({
+                    value: row.delta,
+                    itemStyle: {
+                      color: row.delta >= 0 ? "#0d9488" : "#dc6464",
+                    },
+                  })),
+                },
+              ],
+            },
+            true,
+          );
+          const points = users.map((userId) => [
+            results[1].get(userId).score,
+            results[2].get(userId).score,
+            userId,
+          ]);
+          const minimum = Math.min(
+              0,
+              ...points.flatMap((point) => point.slice(0, 2)),
+            ),
+            maximum = Math.max(...points.flatMap((point) => point.slice(0, 2)));
+          charts.scatterChart.setOption(
+            scatterZoom({
+              ...base,
+              legend: { show: false },
+              tooltip: {
+                trigger: "item",
+                formatter: (parameters) =>
+                  parameters.seriesType === "scatter"
+                    ? `用户 ${parameters.value[2]}<br>Positive: ${parameters.value[0].toFixed(6)}<br>Signed: ${parameters.value[1].toFixed(6)}`
+                    : "y = x",
+              },
+              xAxis: {
+                type: "value",
+                name: "Positive Katz",
+                nameLocation: "middle",
+                nameGap: 30,
+                min: minimum - (maximum - minimum || 1) * 0.08,
+                max: maximum + (maximum - minimum || 1) * 0.08,
+              },
+              yAxis: {
+                type: "value",
+                name: "Signed Katz",
+                min: minimum - (maximum - minimum || 1) * 0.08,
+                max: maximum + (maximum - minimum || 1) * 0.08,
+              },
+              series: [
+                {
+                  type: "scatter",
+                  symbolSize: 5,
+                  itemStyle: { opacity: 0.55, color: colors[1] },
+                  data: points,
+                },
+                {
+                  type: "line",
+                  silent: true,
+                  symbol: "none",
+                  lineStyle: { type: "dashed", color: "#94a3b8" },
+                  data: [
+                    [minimum, minimum],
+                    [maximum, maximum],
+                  ],
+                },
+              ],
+            }),
+            true,
+          );
+          charts.convergenceChart.setOption(
+            {
+              ...base,
+              color: colors.slice(1),
+              xAxis: { type: "value", name: "迭代轮次", min: 1 },
+              yAxis: { type: "log", name: "L1 变化量" },
+              series: methods.slice(1).map((method, index) => ({
+                name: method.label,
+                type: "line",
+                showSymbol: false,
+                data: iterationRows[index].map((row) => [
+                  Number(row.iteration),
+                  Number(row.l1_delta),
+                ]),
+                ...(index === 0
+                  ? {
+                      markLine: {
+                        symbol: "none",
+                        label: {
+                          formatter: "阈值 0.01",
+                          position: "insideEndTop",
+                        },
+                        data: [{ yAxis: 0.01 }],
+                        lineStyle: { color: "#dc6464" },
+                      },
+                    }
+                  : {}),
+              })),
+            },
+            true,
+          );
+          const metrics = document.getElementById("metrics");
+          metrics.replaceChildren();
+          for (const [leftIndex, rightIndex] of [
+            [0, 1],
+            [0, 2],
+            [1, 2],
+          ]) {
+            const leftTop = new Set(
+              orderedUsers(results[leftIndex]).slice(0, 10),
+            );
+            const overlap = orderedUsers(results[rightIndex])
+              .slice(0, 10)
+              .filter((userId) => leftTop.has(userId)).length;
+            const coefficient = correlation(
+              averageRanks(users, results[leftIndex]),
+              averageRanks(users, results[rightIndex]),
+            );
+            const tableRow = document.createElement("tr");
+            for (const text of [
+              `${methods[leftIndex].label} / ${methods[rightIndex].label}`,
+              coefficient === null ? "N/A" : coefficient.toFixed(4),
+              `${overlap}/10（${overlap * 10}%）`,
+            ]) {
+              const cell = document.createElement("td");
+              cell.textContent = text;
+              tableRow.appendChild(cell);
+            }
+            metrics.appendChild(tableRow);
+          }
+          const sameRankBody = document.getElementById("sameRankScores");
+          sameRankBody.replaceChildren();
+          for (let rank = 1; rank <= 10; rank++) {
+            const rankRow = document.createElement("tr");
+            const rankCell = document.createElement("td");
+            rankCell.textContent = rank;
+            rankRow.appendChild(rankCell);
+            for (const result of results) {
+              const scoreCell = document.createElement("td");
+              const matchedUsers = users
+                .filter((userId) => result.get(userId).rank === rank)
+                .sort((left, right) => Number(left) - Number(right));
+              if (!matchedUsers.length)
+                scoreCell.textContent = "—（并列排名跳号）";
+              else
+                for (const userId of matchedUsers) {
+                  const entry = document.createElement("div");
+                  entry.textContent = `用户 ${userId} / ${result.get(userId).score.toFixed(6)}`;
+                  scoreCell.appendChild(entry);
+                }
+              rankRow.appendChild(scoreCell);
+            }
+            sameRankBody.appendChild(rankRow);
+          }
+          charts.groupedBarChart.setOption(
+            scaledBars(
+              {
+                ...base,
+                tooltip: {
+                  trigger: "axis",
+                  axisPointer: { type: "shadow" },
+                  formatter: (parameters) => {
+                    const userId = parameters[0].axisValue;
+                    return (
+                      `用户 ${userId}<br>` +
+                      parameters
+                        .map((parameter) => {
+                          const result =
+                            results[parameter.seriesIndex].get(userId);
+                          return `${parameter.marker}${parameter.seriesName}：名次 ${result.rank}<br>排名 ${result.rank} · 原始分数 ${result.score.toFixed(6)}`;
+                        })
+                        .join("<br>")
+                    );
+                  },
+                },
+                xAxis: {
+                  type: "category",
+                  name: "用户 ID",
+                  data: topUsers,
+                  axisLabel: { rotate: 35 },
+                },
+                yAxis: { type: "value", name: "原始名次（越小越好）" },
+                dataZoom: [{ type: "inside" }, { type: "slider", bottom: 0 }],
+                series: methods.map((method, index) => ({
+                  name: method.label,
+                  type: "bar",
+                  barMaxWidth: 18,
+                  data: topUsers.map(
+                    (userId) => results[index].get(userId).rank,
+                  ),
+                })),
+              },
+              true,
+            ),
+            true,
+          );
+          const stats = document.getElementById("stats");
+          stats.replaceChildren();
+          for (const [label, value] of [
+            ["平台节点", results[0].size],
+            ["合格排名用户", users.length],
+            ...iterationRows.map((rows, index) => [
+              methods[index + 1].label + " 迭代",
+              rows.at(-1).iteration + " 轮",
+            ]),
+          ]) {
+            const item = document.createElement("div");
+            item.className = "stat";
+            item.textContent = label;
+            const number = document.createElement("b");
+            number.textContent = value;
+            item.appendChild(number);
+            stats.appendChild(item);
+          }
+          status.textContent = `Bitcoin ${platform.toUpperCase()} · HBase 数据源 · 批次 ${payload.run_id}。排名越小越好；可点击图例切换曲线。`;
+        } catch (error) {
+          if (version === requestVersion)
+            status.textContent = `读取失败：${error.message}。请运行 org.example.HbaseEchartsServer 后访问本页。`;
+        } finally {
+          if (version === requestVersion)
+            Object.values(charts).forEach((chart) => chart.hideLoading());
+        }
+      }
+
+      const analyticsCharts = [
+        echarts.init(document.getElementById("analyticsPrimary")),
+        echarts.init(document.getElementById("analyticsSecondary")),
+      ];
+      const jobDescriptions = {
+        mr27: [
+          "MR27 · 正向信任链与直接负评冲突",
+          "查看哪些直接负评关系同时存在“A正评B、B正评C”的二跳路径，并找出这些路径中的中介用户。",
+        ],
+        mr18: [
+          "MR18 · 用户每日评分突增检测",
+          "查看哪些用户在哪些日期的评分次数或负评次数明显增加，以及这些记录随时间的分布。",
+        ],
+        mr25: [
+          "MR25 · 主动评分用户持续参与",
+          "查看不同月份首次主动评分的用户，在第1、3、6个月还有多少人继续评分，以及贡献了多少次评分。",
+        ],
+        mr22: [
+          "MR22 · OTC星期与小时评分活动",
+          "查看Bitcoin OTC在不同星期和小时的评分数量，找出评分最集中的时段。",
+        ],
+        mr26: [
+          "MR26 · 双向评分差异",
+          "查看哪些用户对彼此的评分差距最大，以及双方是否给出了相反的正负评价。",
+        ],
+      };
+      /**
+       * 刷新当前任务的摘要指标；使用 textContent 写入文本，字段值不当作 HTML 执行。
+       */
+      function setStats(items) {
+        const container = document.getElementById("stats");
+        container.replaceChildren();
+        for (const [label, value] of items) {
+          const item = document.createElement("div");
+          item.className = "stat";
+          item.textContent = label;
+          const number = document.createElement("b");
+          number.textContent = value;
+          item.appendChild(number);
+          container.appendChild(item);
+        }
+      }
+      /**
+       * 按结构化响应中的字段生成表格，最多显示十行。
+       * 当前任务没有记录时显示空结果。
+       */
+      function fillTable(rows) {
+        const head = document.getElementById("analyticsHeader"),
+          body = document.getElementById("analyticsRows");
+        head.replaceChildren();
+        body.replaceChildren();
+        if (!rows.length) {
+          body.textContent = "暂无记录。";
+          return;
+        }
+        const columns = Object.keys(rows[0]);
+        const header = document.createElement("tr");
+        for (const column of columns) {
+          const cell = document.createElement("th");
+          cell.textContent = column;
+          header.appendChild(cell);
+        }
+        head.appendChild(header);
+        for (const row of rows.slice(0, 10)) {
+          const tr = document.createElement("tr");
+          for (const column of columns) {
+            const cell = document.createElement("td");
+            cell.textContent = row[column];
+            tr.appendChild(cell);
+          }
+          body.appendChild(tr);
+        }
+      }
+      /**
+       * 根据当前启用的Job查询对应HBase数据集。
+       * 生成活动热力、双向差异、评分突增、持续参与及路径冲突图表；MR22仅支持OTC。
+       * 请求失败时清空旧图，避免把上个任务的图误认为当前结果。
+       */
+      async function renderAnalytics(jobId) {
+        const version = ++requestVersion;
+        const platform = document.getElementById("platform").value;
+        const status = document.getElementById("status");
+        status.textContent = "正在查询 HBase 当前批次…";
+        analyticsCharts.forEach((chart) => chart.showLoading());
+        try {
+          const response = await fetch(
+            `/api/dashboard?job=${jobId}&platform=${platform}`,
+            { cache: "no-store" },
+          );
+          if (!response.ok)
+            throw new Error(
+              `HBase API ${response.status}，该 Job 可能尚未成功发布`,
+            );
+          const payload = await response.json();
+          if (version !== requestVersion) return;
+          if (payload.source !== "hbase-api")
+            throw new Error("非 HBase 数据源");
+          const data = payload.datasets;
+          const description = jobDescriptions[jobId];
+          document.getElementById("jobTitle").textContent = description[0];
+          document.getElementById("jobBusiness").textContent = description[1];
+          let rows = [];
+          let first = {},
+            second = {};
+          let titles = [];
+          const style = {
+            color: colors,
+            tooltip: { trigger: "axis" },
+            grid: { top: 35, left: 75, right: 30, bottom: 75 },
+          };
+          if (jobId === "mr22") {
+            const cells = new Map(
+              data.heatmap.map((row) => [
+                `${row.weekday}:${row.hour}`,
+                Number(row.event_count),
+              ]),
+            );
+            const points = [];
+            for (let weekday = 1; weekday <= 7; weekday++)
+              for (let hour = 0; hour < 24; hour++)
+                points.push([
+                  hour,
+                  weekday - 1,
+                  cells.get(`${weekday}:${hour}`) || 0,
+                ]);
+            const max = Math.max(1, ...points.map((point) => point[2]));
+            first = {
+              tooltip: {
+                position: "top",
+                formatter: (parameters) =>
+                  `UTC 星期${parameters.value[1] + 1} ${parameters.value[0]}时：${parameters.value[2]} 条`,
+              },
+              grid: { top: 20, left: 60, bottom: 90, right: 15 },
+              xAxis: {
+                type: "category",
+                data: Array.from({ length: 24 }, (_, hour) => hour),
+              },
+              yAxis: {
+                type: "category",
+                data: ["一", "二", "三", "四", "五", "六", "日"],
+              },
+              visualMap: {
+                type: "piecewise",
+                pieces: (() => {
+                  const ordered = points
+                    .map((point) => point[2])
+                    .filter((value) => value > 0)
+                    .sort((left, right) => left - right);
+                  const bounds = [
+                    ...new Set(
+                      [0.25, 0.5, 0.75, 0.9, 1].map(
+                        (quantile) =>
+                          ordered[
+                            Math.min(
+                              ordered.length - 1,
+                              Math.floor((ordered.length - 1) * quantile),
+                            )
+                          ] || 1,
+                      ),
+                    ),
+                  ];
+                  let previous = 0;
+                  const pieces = [{ value: 0, label: "0", color: "#edf2f7" }];
+                  for (const bound of bounds) {
+                    pieces.push({
+                      gt: previous,
+                      lte: bound,
+                      label: `${previous + 1}–${bound}`,
+                    });
+                    previous = bound;
+                  }
+                  return pieces;
+                })(),
+                orient: "horizontal",
+                left: "center",
+                bottom: 0,
+                itemWidth: 12,
+                itemHeight: 12,
+                textStyle: { fontSize: 10 },
+              },
+              series: [{ type: "heatmap", data: points }],
+            };
+            const hours = Array.from({ length: 24 }, (_, hour) =>
+              points
+                .filter((point) => point[0] === hour)
+                .reduce((sum, point) => sum + point[2], 0),
+            );
+            second = {
+              ...style,
+              xAxis: { type: "category", data: hours.map((_, hour) => hour) },
+              yAxis: { type: "value", name: "评分次数" },
+              series: [{ type: "bar", data: hours }],
+            };
+            rows = [...data.heatmap].sort(
+              (left, right) =>
+                Number(right.event_count) - Number(left.event_count),
+            );
+            titles = ["UTC 活动热力（分位数分档着色）", "各 UTC 小时事件总量"];
+            setStats([
+              ["合法事件数", hours.reduce((sum, value) => sum + value, 0)],
+              ["有事件的时间格", data.heatmap.length],
+              ["时间口径", "UTC"],
+            ]);
+          } else if (jobId === "mr26") {
+            const top = [...data.top].sort(
+              (left, right) => Number(left.rank) - Number(right.rank),
+            );
+            rows = top;
+            first = {
+              ...style,
+              xAxis: {
+                type: "category",
+                data: top.map((row) => `${row.u}↔${row.v}`),
+                axisLabel: { rotate: 45 },
+              },
+              yAxis: { type: "value", name: "绝对评分差距" },
+              series: [
+                {
+                  type: "bar",
+                  data: top.map((row) => Number(row.absolute_difference)),
+                },
+              ],
+            };
+            second = {
+              ...style,
+              tooltip: {
+                trigger: "item",
+                formatter: (p) =>
+                  `${p.value[2]}↔${p.value[3]}<br>正向 ${p.value[0]}，反向 ${p.value[1]}`,
+              },
+              xAxis: { type: "value", name: "u→v 评分", min: -11, max: 11 },
+              yAxis: { type: "value", name: "v→u 评分", min: -11, max: 11 },
+              series: [
+                {
+                  type: "scatter",
+                  symbolSize: 5,
+                  data: data.details.map((row) => [
+                    Number(row.uv_rating),
+                    Number(row.vu_rating),
+                    row.u,
+                    row.v,
+                  ]),
+                },
+              ],
+            };
+            titles = [
+              "双向评分差距 Top-10（同值同高）",
+              "双方评分分布（可缩放）",
+            ];
+            setStats([
+              ["双向用户对", data.details.length],
+              [
+                "正负冲突对",
+                data.details.filter((row) => row.sign_conflict === "1").length,
+              ],
+              [
+                "最大差距",
+                Math.max(
+                  0,
+                  ...data.details.map((row) => Number(row.absolute_difference)),
+                ),
+              ],
+            ]);
+          } else if (jobId === "mr18") {
+            // 所有异常判断来自 Hadoop，前端只按已输出的计数选取展示的前十用户。
+            const users = [...data.users].sort(
+              (left, right) =>
+                Number(right.alert_windows) - Number(left.alert_windows) ||
+                Number(right.max_event_count) - Number(left.max_event_count) ||
+                Number(left.user_id) - Number(right.user_id),
+            );
+            const top = users.slice(0, 10);
+            rows = [...data.alerts].sort(
+              (left, right) =>
+                Number(right.event_count) - Number(left.event_count) ||
+                left.window_date.localeCompare(right.window_date) ||
+                Number(left.user_id) - Number(right.user_id),
+            );
+            first = {
+              ...style,
+              xAxis: {
+                type: "category",
+                data: top.map((row) => row.user_id),
+                axisLabel: { rotate: 30 },
+              },
+              yAxis: { type: "value", name: "待核查记录数" },
+              series: [
+                {
+                  type: "bar",
+                  name: "待核查记录",
+                  data: top.map((row) => Number(row.alert_windows)),
+                },
+                {
+                  type: "bar",
+                  name: "其中负评次数突增",
+                  data: top.map((row) => Number(row.negative_alert_windows)),
+                },
+              ],
+            };
+            // 日汇总只用于展示，不能把不同用户的均值相加当作全平台基线。
+            const days = new Map();
+            for (const row of data.windows) {
+              const daily = days.get(row.window_date) || {
+                events: 0,
+                alerts: 0,
+                negative: 0,
+              };
+              daily.events += Number(row.event_count);
+              daily.alerts +=
+                row.burst === "1" || row.negative_burst === "1" ? 1 : 0;
+              daily.negative += row.negative_burst === "1" ? 1 : 0;
+              days.set(row.window_date, daily);
+            }
+            // 完整用户每日评分数据中缺少某个全平台日期，表示该日事件数确为零。
+            // 补齐日历轴，避免把相隔多天的活动日挤成相邻类别。
+            const observedDates = [...days.keys()].sort();
+            const dates = [];
+            if (observedDates.length) {
+              const last = Date.parse(
+                observedDates[observedDates.length - 1] + "T00:00:00Z",
+              );
+              for (
+                let instant = Date.parse(observedDates[0] + "T00:00:00Z");
+                instant <= last;
+                instant += 86400000
+              ) {
+                const day = new Date(instant).toISOString().slice(0, 10);
+                dates.push(day);
+                if (!days.has(day))
+                  days.set(day, { events: 0, alerts: 0, negative: 0 });
+              }
+            }
+            second = {
+              ...style,
+              legend: { top: 0 },
+              grid: { top: 60, left: 70, right: 65, bottom: 75 },
+              xAxis: { type: "category", data: dates },
+              yAxis: [
+                { type: "value", name: "评分次数", min: 0 },
+                { type: "value", name: "待核查记录数", min: 0 },
+              ],
+              dataZoom: [{ type: "inside" }, { type: "slider", bottom: 5 }],
+              series: [
+                {
+                  name: "评分次数",
+                  type: "line",
+                  showSymbol: false,
+                  data: dates.map((day) => days.get(day).events),
+                },
+                {
+                  name: "待核查记录",
+                  type: "line",
+                  yAxisIndex: 1,
+                  showSymbol: false,
+                  data: dates.map((day) => days.get(day).alerts),
+                },
+                {
+                  name: "负评次数突增记录",
+                  type: "line",
+                  yAxisIndex: 1,
+                  showSymbol: false,
+                  data: dates.map((day) => days.get(day).negative),
+                },
+              ],
+            };
+            titles = [
+              "待核查记录最多的十位用户",
+              "每日评分次数与待核查记录（可缩放）",
+            ];
+            setStats([
+              ["用户每日评分记录", data.windows.length],
+              ["待核查记录", data.alerts.length],
+              ["需核查的用户", data.users.length],
+              [
+                "历史不足7天的记录",
+                data.windows.filter(
+                  (row) => row.status === "insufficient_history",
+                ).length,
+              ],
+            ]);
+            // 只转换展示文案，保留Hadoop/API中的原始字段与统计口径。
+            const statusNames = {
+              insufficient_history: "历史不足7天，暂不判断",
+              normal: "未达到突增门槛",
+              candidate: "待核查",
+            };
+            rows = rows.map((row) => ({
+              平台: row.platform.toUpperCase(),
+              用户编号: row.user_id,
+              "日期（UTC）": row.window_date,
+              当天评分次数: row.event_count,
+              其中负评次数: row.negative_count,
+              不同评分对象数: row.distinct_targets,
+              已有历史天数: row.history_days,
+              历史日均评分次数: Number(row.baseline_mean).toFixed(4),
+              历史评分次数标准差: Number(row.baseline_std).toFixed(4),
+              评分次数突增门槛: Number(row.burst_threshold).toFixed(4),
+              历史日均负评次数: Number(row.negative_mean).toFixed(4),
+              历史负评次数标准差: Number(row.negative_std).toFixed(4),
+              负评次数突增门槛: Number(row.negative_threshold).toFixed(4),
+              评分次数是否突增:
+                row.status === "insufficient_history"
+                  ? "暂不判断"
+                  : row.burst === "1"
+                    ? "是"
+                    : "否",
+              负评次数是否突增:
+                row.status === "insufficient_history"
+                  ? "暂不判断"
+                  : row.negative_burst === "1"
+                    ? "是"
+                    : "否",
+              核查提示: statusNames[row.status] || row.status,
+            }));
+          } else if (jobId === "mr27") {
+            const conflicts = data.edges
+              .filter((row) => row.has_conflict === "true")
+              .sort(
+                (left, right) =>
+                  Number(right.mediator_count) - Number(left.mediator_count) ||
+                  Number(left.source) - Number(right.source) ||
+                  Number(left.target) - Number(right.target),
+              );
+            const top = conflicts.slice(0, 10);
+            first = {
+              ...style,
+              xAxis: {
+                type: "category",
+                data: top.map((row) => `${row.source}→${row.target}`),
+                axisLabel: { rotate: 30 },
+              },
+              yAxis: { type: "value", name: "不同正向中介人数", min: 0 },
+              series: [
+                {
+                  type: "bar",
+                  data: top.map((row) => Number(row.mediator_count)),
+                },
+              ],
+            };
+            const selected = top[0];
+            const graphNodes = [],
+              graphEdges = [];
+            if (selected) {
+              const paths = data.paths
+                .filter(
+                  (row) =>
+                    row.source === selected.source &&
+                    row.target === selected.target,
+                )
+                .sort(
+                  (left, right) =>
+                    Number(left.intermediary) - Number(right.intermediary),
+                )
+                .slice(0, 20);
+              graphNodes.push({
+                id: selected.source,
+                name: `A:${selected.source}`,
+                x: 0,
+                y: 200,
+                symbolSize: 38,
+              });
+              graphNodes.push({
+                id: selected.target,
+                name: `C:${selected.target}`,
+                x: 600,
+                y: 200,
+                symbolSize: 38,
+              });
+              paths.forEach((row, index) => {
+                graphNodes.push({
+                  id: row.intermediary,
+                  name: `B:${row.intermediary}`,
+                  x: 300,
+                  y: (index * 400) / Math.max(paths.length - 1, 1),
+                  symbolSize: 20,
+                });
+                graphEdges.push({
+                  source: row.source,
+                  target: row.intermediary,
+                  value: Number(row.source_rating),
+                });
+                graphEdges.push({
+                  source: row.intermediary,
+                  target: row.target,
+                  value: Number(row.intermediary_rating),
+                });
+              });
+              graphEdges.push({
+                source: selected.source,
+                target: selected.target,
+                value: Number(selected.direct_rating),
+                lineStyle: { color: "#d64545", width: 3, curveness: 0.4 },
+              });
+            }
+            second = {
+              tooltip: {
+                formatter: (p) =>
+                  p.dataType === "edge"
+                    ? `${p.data.source}→${p.data.target}：${p.data.value}`
+                    : p.data.name,
+              },
+              series: [
+                {
+                  type: "graph",
+                  layout: "none",
+                  roam: true,
+                  label: { show: true },
+                  edgeSymbol: ["none", "arrow"],
+                  lineStyle: { color: "#397bc3", opacity: 0.65 },
+                  data: graphNodes,
+                  links: graphEdges,
+                },
+              ],
+            };
+            rows = conflicts;
+            titles = [
+              "直接负评获得正向二跳支持：前十对",
+              selected
+                ? `${selected.source}→${selected.target}：${selected.mediator_count}名中介，最多展示20名`
+                : "暂无冲突路径",
+            ];
+            setStats([
+              ["全部直接负边", data.edges.length],
+              ["有正向二跳支持的负边", conflicts.length],
+              [
+                "负边覆盖率",
+                data.edges.length
+                  ? `${((conflicts.length / data.edges.length) * 100).toFixed(2)}%`
+                  : "N/A",
+              ],
+              ["不同冲突三元组", data.paths.length],
+            ]);
+          } else if (jobId === "mr25") {
+            // 比较资格由 MR 输出，不在网页重新计算业务口径。
+            const eligible = data.cells.filter(
+              (row) => row.comparison_eligible === "true",
+            );
+            const cohorts = [
+              ...new Set(
+                eligible
+                  .filter((row) => [1, 3, 6].includes(Number(row.month_offset)))
+                  .map((row) => row.cohort_month),
+              ),
+            ].sort();
+            const cells = new Map(
+              data.cells.map((row) => [
+                `${row.cohort_month}:${row.month_offset}`,
+                row,
+              ]),
+            );
+            const horizons = [1, 3, 6];
+            first = {
+              ...style,
+              legend: { top: 0 },
+              grid: { top: 60, left: 65, right: 25, bottom: 80 },
+              tooltip: {
+                trigger: "axis",
+                formatter: (params) =>
+                  params[0].axisValue +
+                  params
+                    .map((p) => {
+                      const row = cells.get(
+                        `${p.axisValue}:${horizons[p.seriesIndex]}`,
+                      );
+                      return `<br>${p.seriesName}：${row && row.comparison_eligible === "true" ? `${(Number(row.activity_rate) * 100).toFixed(2)}%（${row.active_users}/${row.cohort_size}人，${row.event_count}次评分）` : "观察期不完整"}`;
+                    })
+                    .join(""),
+              },
+              xAxis: { type: "category", data: cohorts },
+              // 比例轴从零开始、上界随实际数据变化，避免低参与率全部挤在底部。
+              yAxis: { type: "value", name: "当月再次评分人数占比 %", min: 0 },
+              dataZoom: [{ type: "inside" }, { type: "slider", bottom: 15 }],
+              series: horizons.map((offset) => ({
+                name: `第${offset}月`,
+                type: "bar",
+                data: cohorts.map((cohort) => {
+                  const row = cells.get(`${cohort}:${offset}`);
+                  return row && row.comparison_eligible === "true"
+                    ? Number(row.activity_rate) * 100
+                    : null;
+                }),
+              })),
+            };
+            // 第二张图用相同群组和月份对照真实评分贡献，人数与评分次数不混用。
+            second = {
+              ...style,
+              legend: { top: 0 },
+              grid: { top: 60, left: 65, right: 25, bottom: 80 },
+              xAxis: { type: "category", data: cohorts },
+              yAxis: { type: "value", name: "当月评分次数", min: 0 },
+              dataZoom: [{ type: "inside" }, { type: "slider", bottom: 15 }],
+              series: horizons.map((offset) => ({
+                name: `第${offset}月`,
+                type: "bar",
+                data: cohorts.map((cohort) => {
+                  const row = cells.get(`${cohort}:${offset}`);
+                  return row && row.comparison_eligible === "true"
+                    ? Number(row.event_count)
+                    : null;
+                }),
+              })),
+            };
+            rows = eligible
+              .filter((row) => horizons.includes(Number(row.month_offset)))
+              .sort(
+                (left, right) =>
+                  right.cohort_month.localeCompare(left.cohort_month) ||
+                  Number(left.month_offset) - Number(right.month_offset),
+              );
+            titles = [
+              "各群组第1/3/6月参与率（足量群组、完整月份）",
+              "相同群组第1/3/6月评分贡献",
+            ];
+            setStats([
+              ["主动评分用户", data.users.length],
+              [
+                "全部群组",
+                new Set(data.cells.map((row) => row.cohort_month)).size,
+              ],
+              ["可比较群组", cohorts.length],
+              [
+                "可比较月份单元",
+                eligible.filter((row) =>
+                  horizons.includes(Number(row.month_offset)),
+                ).length,
+              ],
+            ]);
+          } else {
+            throw new Error("未启用的任务");
+          }
+          document.getElementById("primaryTitle").textContent = titles[0];
+          document.getElementById("secondaryTitle").textContent = titles[1];
+          fillTable(rows);
+          if (jobId === "mr22") second = scaledBars(second);
+          if (["mr18", "mr27"].includes(jobId)) first = scaledBars(first);
+          if (jobId === "mr26") {
+            first = scaledBars(first);
+            second = scatterZoom(second);
+          }
+          analyticsCharts[0].setOption(first, true);
+          analyticsCharts[1].setOption(second, true);
+          status.textContent = `${description[0]} · Bitcoin ${platform.toUpperCase()} · HBase 批次 ${payload.run_id}`;
+        } catch (error) {
+          if (version === requestVersion) {
+            document.getElementById("stats").replaceChildren();
+            document.getElementById("analyticsRows").replaceChildren();
+            analyticsCharts.forEach((chart) => chart.clear());
+            status.textContent = "读取失败：" + error.message;
+          }
+        } finally {
+          if (version === requestVersion)
+            analyticsCharts.forEach((chart) => chart.hideLoading());
+        }
+      }
+      /**
+       * 统一入口：先切换可见面板，再按 Job 调用对应渲染函数。
+       * 面板显示后重新计算画布尺寸，避免隐藏容器初始化导致图表宽高不正确。
+       */
+      // 进入MR22锁定OTC；离开后恢复用户此前为其他任务选择的平台。
+      let lastSharedPlatform = document.getElementById("platform").value;
+      function render() {
+        const jobId = document.getElementById("jobSelector").value;
+        const platformSelector = document.getElementById("platform");
+        if (jobId === "mr22") {
+          if (!platformSelector.disabled)
+            lastSharedPlatform = platformSelector.value;
+          platformSelector.value = "otc";
+          platformSelector.disabled = true;
+        } else {
+          if (platformSelector.disabled)
+            platformSelector.value = lastSharedPlatform;
+          platformSelector.disabled = false;
+        }
+        document.getElementById("mr7Panel").style.display =
+          jobId === "mr7" ? "grid" : "none";
+        document.getElementById("analyticsPanel").style.display =
+          jobId === "mr7" ? "none" : "block";
+        if (jobId === "mr7") {
+          Object.values(charts).forEach((chart) => chart.resize());
+          renderMr7();
+        } else {
+          analyticsCharts.forEach((chart) => chart.resize());
+          renderAnalytics(jobId);
+        }
+      }
+      document.getElementById("axisScale").addEventListener("change", render);
+      document.getElementById("platform").addEventListener("change", render);
+      document.getElementById("jobSelector").addEventListener("change", render);
+      window.addEventListener("resize", () =>
+        [...Object.values(charts), ...analyticsCharts].forEach((chart) =>
+          chart.resize(),
+        ),
+      );
+      render();
+    </script>
+  </body>
+</html>

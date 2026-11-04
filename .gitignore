@@ -1,0 +1,10 @@
+.idea/
+target/
+*.log
+
+.env
+__pycache__/
+results/
+.run/
+scripts/ssh_known_hosts
+*.class
