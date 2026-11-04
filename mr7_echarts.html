@@ -951,8 +951,8 @@
               visualMap: {
                 type: "continuous",
                 dimension: 3,
-                min: 0,
-                max: Math.log1p(max),
+                min: Math.log1p(50),
+                max: Math.log1p(Math.max(51, max)),
                 // 对数映射展开常见数值的颜色差异，原始计数仍保留在第三维。
                 inRange: {
                   color: [
