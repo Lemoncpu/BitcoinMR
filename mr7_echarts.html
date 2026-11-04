@@ -969,12 +969,15 @@
                     ),
                   ];
                   let previous = 0;
-                  const pieces = [{ value: 0, label: "0", color: "#edf2f7" }];
-                  for (const bound of bounds) {
+                  // 数值从低到高采用橙色到红色，逐档加深。
+                  const heatColors = ["#fdba74", "#fb923c", "#f97316", "#ef4444", "#b91c1c"];
+                  const pieces = [{ value: 0, label: "0", color: "#fed7aa" }];
+                  for (const [index, bound] of bounds.entries()) {
                     pieces.push({
                       gt: previous,
                       lte: bound,
                       label: `${previous + 1}–${bound}`,
+                      color: heatColors[Math.round(index * (heatColors.length - 1) / Math.max(1, bounds.length - 1))],
                     });
                     previous = bound;
                   }
