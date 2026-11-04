@@ -949,48 +949,30 @@
                 data: ["一", "二", "三", "四", "五", "六", "日"],
               },
               visualMap: {
-                type: "piecewise",
-                pieces: (() => {
-                  const ordered = points
-                    .map((point) => point[2])
-                    .filter((value) => value > 0)
-                    .sort((left, right) => left - right);
-                  const bounds = [
-                    ...new Set(
-                      [0.25, 0.5, 0.75, 0.9, 1].map(
-                        (quantile) =>
-                          ordered[
-                            Math.min(
-                              ordered.length - 1,
-                              Math.floor((ordered.length - 1) * quantile),
-                            )
-                          ] || 1,
-                      ),
-                    ),
-                  ];
-                  let previous = 0;
-                  // 数值从低到高采用橙色到红色，逐档加深。
-                  const heatColors = ["#fdba74", "#fb923c", "#f97316", "#ef4444", "#b91c1c"];
-                  const pieces = [{ value: 0, label: "0", color: "#fed7aa" }];
-                  for (const [index, bound] of bounds.entries()) {
-                    pieces.push({
-                      gt: previous,
-                      lte: bound,
-                      label: `${previous + 1}–${bound}`,
-                      color: heatColors[Math.round(index * (heatColors.length - 1) / Math.max(1, bounds.length - 1))],
-                    });
-                    previous = bound;
-                  }
-                  return pieces;
-                })(),
+                type: "continuous",
+                dimension: 3,
+                min: 0,
+                max: Math.log1p(max),
+                // 对数映射展开常见数值的颜色差异，原始计数仍保留在第三维。
+                inRange: {
+                  color: [
+                    "#fff0df", "#fed7aa", "#fdba74", "#fb923c",
+                    "#f97316", "#f4511e", "#ef3326", "#dc171c", "#99000d",
+                  ],
+                },
+                formatter: (value) => Math.round(Math.expm1(value)).toLocaleString(),
+                calculable: true,
                 orient: "horizontal",
                 left: "center",
                 bottom: 0,
-                itemWidth: 12,
-                itemHeight: 12,
+                itemWidth: 14,
+                itemHeight: 220,
                 textStyle: { fontSize: 10 },
               },
-              series: [{ type: "heatmap", data: points }],
+              series: [{
+                type: "heatmap",
+                data: points.map((point) => [...point, Math.log1p(point[2])]),
+              }],
             };
             const hours = Array.from({ length: 24 }, (_, hour) =>
               points
